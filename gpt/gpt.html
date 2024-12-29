@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebRTC Video Chat</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    video {
+      width: 45%;
+      margin: 10px;
+      border: 2px solid black;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1>WebRTC Video Chat</h1>
+  <video id="localVideo" autoplay playsinline muted></video>
+  <video id="remoteVideo" autoplay playsinline></video>
+  <br>
+  <button id="startButton">Start</button>
+  <button id="callButton" disabled>Call</button>
+  <button id="hangupButton" disabled>Hang Up</button>
+
+  <script>
+    const startButton = document.getElementById('startButton');
+    const callButton = document.getElementById('callButton');
+    const hangupButton = document.getElementById('hangupButton');
+
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+
+    let localStream;
+    let remoteStream;
+    let peerConnection;
+
+    const signalingServerUrl = location.protocol + '//' + location.hostname + ':' + location.port; // Replace with your server URL
+    const socket = new WebSocket(signalingServerUrl);
+    console.log(location.protocol)
+    const servers = {
+      iceServers: [
+        {
+          urls: "stun:stun.l.google.com:19302", // STUN server to traverse NAT
+        }
+      ]
+    };
+
+    socket.onmessage = async (event) => {
+      console.log(event.data)
+      const message = JSON.parse(event.data);
+
+      if (message.type === 'offer') {
+        // Handle received offer
+        if (!peerConnection) {
+          createPeerConnection();
+        }
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(message));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+
+        socket.send(JSON.stringify(peerConnection.localDescription));
+      } else if (message.type === 'answer') {
+        // Handle received answer
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(message));
+      } else if (message.type === 'candidate') {
+        // Handle received ICE candidate
+        await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+      }
+    };
+
+    startButton.onclick = async () => {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localVideo.srcObject = localStream;
+        callButton.disabled = false;
+        startButton.disabled = true;
+      } catch (error) {
+        console.error('Error accessing media devices:', error);
+        alert(error)
+      }
+    };
+
+    callButton.onclick = async () => {
+      createPeerConnection();
+
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+
+      socket.send(JSON.stringify(offer));
+      callButton.disabled = true;
+      hangupButton.disabled = false;
+    };
+
+    hangupButton.onclick = () => {
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+      remoteStream = null;
+      remoteVideo.srcObject = null;
+      hangupButton.disabled = true;
+      callButton.disabled = false;
+    };
+
+    function createPeerConnection() {
+      peerConnection = new RTCPeerConnection(servers);
+
+      peerConnection.ontrack = (event) => {
+        if (!remoteStream) {
+          remoteStream = new MediaStream();
+          remoteVideo.srcObject = remoteStream;
+        }
+        remoteStream.addTrack(event.track);
+      };
+
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.send(JSON.stringify({ type: 'candidate', candidate: event.candidate }));
+        }
+      };
+
+      localStream.getTracks().forEach((track) => peerConnection.addTrack(track, localStream));
+    }
+  </script>
+</body>
+</html>
