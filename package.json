@@ -4,7 +4,8 @@
   "main": "script.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon gpt/server.js"
+    "dev": "nodemon gpt/server.js",
+    "serve": "node gpt/server.js"
   },
   "keywords": [],
   "author": "",
